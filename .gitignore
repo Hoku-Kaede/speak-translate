@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Models and generated voices (multi-GB, downloaded separately)
+models/
+rvc_models/
+voices/
+logs/
+*.log
+
+# Nested React client
+react-app/node_modules/
+react-app/dist/
+
+# Local config
+.env
+.env.local
+.DS_Store
