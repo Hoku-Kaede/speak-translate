@@ -4,6 +4,8 @@ import GlassSurface from './components/GlassSurface'
 import Strands from './components/Strands'
 import LiquidEther from './components/LiquidEther'
 import OptionWheel from './components/OptionWheel'
+import CallMode from './components/CallMode'
+import { LANGS } from './lang'
 import './App.css'
 
 const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
@@ -16,18 +18,7 @@ const STT_LOCALE: Record<string, string> = {
   tr: 'tr-TR', ar: 'ar-SA', he: 'he-IL', fa: 'fa-IR', 'zh-CN': 'zh-CN', 'zh-TW': 'zh-TW',
   ja: 'ja-JP', ko: 'ko-KR', vi: 'vi-VN', th: 'th-TH', id: 'id-ID', ms: 'ms-MY', tl: 'fil-PH',
 }
-const LANGS: [string, string][] = [
-  ['en','English'],['hi','Hindi'],['ml','Malayalam'],['ta','Tamil'],['te','Telugu'],
-  ['kn','Kannada'],['mr','Marathi'],['gu','Gujarati'],['bn','Bengali'],['pa','Punjabi'],
-  ['ur','Urdu'],['ne','Nepali'],['si','Sinhala'],['es','Spanish'],['fr','French'],
-  ['de','German'],['pt','Portuguese'],['it','Italian'],['nl','Dutch'],['ru','Russian'],
-  ['uk','Ukrainian'],['pl','Polish'],['sv','Swedish'],['no','Norwegian'],['da','Danish'],
-  ['fi','Finnish'],['cs','Czech'],['sk','Slovak'],['sl','Slovenian'],['hr','Croatian'],
-  ['sr','Serbian'],['bg','Bulgarian'],['ro','Romanian'],['el','Greek'],['tr','Turkish'],
-  ['ar','Arabic'],['he','Hebrew'],['fa','Persian'],['zh-CN','Chinese (Simplified)'],
-  ['zh-TW','Chinese (Traditional)'],['ja','Japanese'],['ko','Korean'],['vi','Vietnamese'],
-  ['th','Thai'],['id','Indonesian'],['ms','Malay'],['tl','Filipino'],
-]
+const LANGS_LOCAL_REMOVED = true
 const WHISPER_ALIAS: Record<string,string> = { zh:'zh-CN', yue:'zh-TW', jw:'id', nn:'no', nb:'no', iw:'he', fil:'tl' }
 const LANG_CODES = LANGS.map(([c]) => c)
 const FROM_ITEMS = ['Auto-detect', ...LANGS.map(([, n]) => n)]
@@ -74,6 +65,7 @@ export default function App() {
   const [selectedOutput, setSelectedOutput] = useState('')
   const [engine, setEngine] = useState('auto')
   const [langSync, setLangSync] = useState(0)
+  const [callOpen, setCallOpen] = useState(false)
 
   const recRef = useRef<any>(null)
   const speakRef = useRef<any>(null)
@@ -213,7 +205,11 @@ export default function App() {
       } else {
         try {
           const groqKey = localStorage.getItem('groqKey') || ''
-          const res = await fetch(`http://localhost:8003/translate?text=${encodeURIComponent(text)}&from=${encodeURIComponent(src)}&to=${encodeURIComponent(to)}&engine=${encodeURIComponent(engineVal)}${groqKey ? '&key=' + encodeURIComponent(groqKey) : ''}`, { signal: AbortSignal.timeout(120000) })
+          const savedKey = localStorage.getItem('kyrieApiKey') || ''
+          const geminiKey = savedKey.startsWith('AIza') ? savedKey : (localStorage.getItem('geminiKey') || '')
+          const usingGemini = engineVal === 'gemini' || (engineVal === 'auto' && geminiKey)
+          const keyParam = usingGemini ? (geminiKey ? '&gemini_key=' + encodeURIComponent(geminiKey) : '') : (groqKey ? '&key=' + encodeURIComponent(groqKey) : '')
+          const res = await fetch(`http://localhost:8003/translate?text=${encodeURIComponent(text)}&from=${encodeURIComponent(src)}&to=${encodeURIComponent(to)}&engine=${encodeURIComponent(engineVal)}${keyParam}`, { signal: AbortSignal.timeout(120000) })
           if (!res.ok) throw new Error('backend ' + res.status)
           const data = await res.json()
           result = data.translated || ''
@@ -520,6 +516,7 @@ export default function App() {
           <span className={`w-2 h-2 rounded-full ${speaking ? 'bg-sky-400' : listening || recording ? 'bg-rose-400' : 'bg-emerald-400'}`} />
           {status} · RVC {rvcMode ? 'ON' : 'OFF'}
         </div>
+        <button onClick={() => setCallOpen(true)} className="btn">📞 call mode</button>
       </div>
       <div className="w-full max-w-3xl flex gap-2 xl:hidden">
         <select value={from} onChange={e => setFrom(e.target.value)} className="field flex-1">
@@ -567,7 +564,8 @@ export default function App() {
         <select value={engine} onChange={e => setEngine(e.target.value)} className="field flex-1">
           <option value="auto">auto (Google→MyMemory→Qwen)</option>
           <option value="google">Google</option>
-          <option value="groq">Groq 70B (free key)</option>
+          <option value="gemini">Gemini Flash (free key)</option>
+          <option value="groq">Groq 120B (free key)</option>
           <option value="mymemory">MyMemory (free)</option>
           <option value="aya">Aya (local)</option>
           <option value="qwen">Qwen (local)</option>
@@ -633,6 +631,7 @@ export default function App() {
           </div>
         ))}
       </div>
+      {callOpen && <CallMode onClose={() => setCallOpen(false)} />}
     </div>
   )
 }

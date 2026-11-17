@@ -12,6 +12,11 @@ BIG = os.environ.get("WHISPER_MODEL_BIG", "large-v3-turbo")
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 ML_DIR = os.path.join(APP_DIR, "models", "ml-ct2")
 ML = os.environ.get("WHISPER_ML_MODEL", ML_DIR if os.path.isdir(ML_DIR) else "thennal/whisper-medium-ml")
+# Faster Malayalam option built by build_ml_small.py: same words, ~3x quicker on CPU.
+ML_SMALL_DIR = os.path.join(APP_DIR, "models", "ml-small-ct2")
+ML_SMALL = os.environ.get("WHISPER_ML_MODEL_SMALL", ML_SMALL_DIR if os.path.isdir(ML_SMALL_DIR) else "")
+# Models that must stay on CPU (see get_model) and decode greedily.
+ML_SET = {m for m in (ML, ML_SMALL) if m}
 # short/low-resource scripts: the small model writes the wrong script, so use the big one
 INDIC = {"ml", "ta", "te", "kn", "bn", "gu", "pa", "mr", "hi", "ur", "ne", "si", "or", "as"}
 MODELS = {}
@@ -43,14 +48,42 @@ def _device():
     return DEVICE
 
 
+def _free_others(keep=None):
+    """Drop every cached model except `keep` and release VRAM.
+
+    A 4 GB card cannot hold two Whisper models plus RVC, so switching
+    languages evicts instead of co-residing.
+    """
+    for key in list(MODELS):
+        if key != keep:
+            try:
+                del MODELS[key]
+            except Exception:
+                pass
+    import gc
+    gc.collect()
+    try:
+        import torch
+        torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+
 def get_model(name):
     if name in MODELS:
         return MODELS[name]
     from faster_whisper import WhisperModel
     t = time.time()
     dev = _device()
+    # Every reduced-precision CUDA path (float16 / int8_float16 / int8) returns
+    # corrupt tokens for Malayalam on this GPU, and float32 takes ~45s.
+    # CPU int8 is correct in ~7s, so keep ml off the GPU entirely.
+    if name in ML_SET:
+        dev = "cpu"
+    if dev == "cuda":
+        _free_others(name)
     # Ollama holds ~2.2 GB; drop it before loading a big model so Whisper actually uses the GPU
-    if dev == "cuda" and name in (BIG, ML):
+    if dev == "cuda" and name == BIG:
         for om in ("qwen3.5:2b", "aya:8b"):
             try:
                 req = urllib.request.Request(
@@ -68,8 +101,9 @@ def get_model(name):
         print("[stt] %s on %s failed (%s); loading on CPU" % (name, dev, str(e).splitlines()[-1][:160]), flush=True)
         m = WhisperModel(name, device="cpu", compute_type="int8")
         dev = "cpu"
+        compute = "int8"
     MODELS[name] = m
-    print("[stt] %s loaded on %s in %.1fs" % (name, dev, time.time() - t), flush=True)
+    print("[stt] %s loaded on %s/%s in %.1fs" % (name, dev, compute, time.time() - t), flush=True)
     return m
 
 
@@ -93,9 +127,38 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(204); self._cors(); self.end_headers()
 
     def do_GET(self):
-        if self.path == "/health":
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/health":
             self.send_response(200); self.send_header("Content-Type", "application/json"); self._cors(); self.end_headers()
             self.wfile.write(json.dumps({"ok": True, "device": DEVICE or "unloaded", "loaded": list(MODELS)}).encode())
+            return
+        if parsed.path == "/warm":
+            qs = urllib.parse.parse_qs(parsed.query)
+            hint = (qs.get("lang") or [""])[0].strip().lower()
+            model_q = (qs.get("model") or [""])[0].strip().lower()
+            if model_q == "ml-med":
+                name = ML
+            elif model_q == "ml":
+                name = ML_SMALL or ML
+            elif model_q == "big":
+                name = BIG
+            elif model_q == "small":
+                name = SMALL
+            else:
+                name = (ML_SMALL or ML) if hint == "ml" else (BIG if hint in INDIC else SMALL)
+            t = time.time()
+            try:
+                get_model(name)
+                body = json.dumps({"model": name, "seconds": round(time.time() - t, 1)}).encode()
+                self.send_response(200)
+            except Exception as e:
+                body = json.dumps({"error": str(e)[:300]}).encode()
+                self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self._cors()
+            self.end_headers()
+            self.wfile.write(body)
             return
         self.send_response(404); self._cors(); self.end_headers()
 
@@ -105,6 +168,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(404); self._cors(); self.end_headers(); return
         qs = urllib.parse.parse_qs(parsed.query)
         hint = (qs.get("lang") or [""])[0].strip().lower() or None
+        model_q = (qs.get("model") or [""])[0].strip().lower() or None
         free = (qs.get("free") or ["0"])[0] == "1"
         length = int(self.headers.get("Content-Length", 0))
         data = self.rfile.read(length)
@@ -121,40 +185,37 @@ class Handler(BaseHTTPRequestHandler):
         used = SMALL
         try:
             t0 = time.time()
-            if hint == "ml":
+            if model_q == "ml-med":
                 name = ML
+            elif model_q == "ml":
+                name = ML_SMALL or ML
+            elif model_q == "big":
+                name = BIG
+            elif model_q == "small":
+                name = SMALL
+            elif hint == "ml":
+                # turbo returns garbage here on every reduced-precision CUDA path;
+                # the CPU Malayalam models are correct.
+                name = ML_SMALL or ML
             elif hint in INDIC:
                 name = BIG
             else:
                 name = SMALL
-            beam = 1 if name == BIG else 5
+            beam = 1 if (name in ML_SET or name == BIG) else 5
             text, lang, score, prob = _transcribe(get_model(name), transcribe_path, hint, beam)
             used = name
-            if not hint and lang == "ml" and name != ML:
+            if not hint and lang in INDIC and name != BIG:
                 try:
-                    t2, l2, s2, p2 = _transcribe(get_model(ML), transcribe_path, "ml", 5)
+                    retry = (ML_SMALL or ML) if lang == "ml" else BIG
+                    t2, l2, s2, p2 = _transcribe(get_model(retry), transcribe_path, lang, 1)
                     if t2:
-                        text, lang, score, prob, used = t2, l2, s2, p2, ML
-                except Exception as e:
-                    print("[stt] ml-model retry failed: %s" % str(e).splitlines()[-1][:160], flush=True)
-            elif not hint and lang in INDIC and lang != "ml" and name != BIG:
-                try:
-                    t2, l2, s2, p2 = _transcribe(get_model(BIG), transcribe_path, lang, 1)
-                    if t2:
-                        text, lang, score, prob, used = t2, l2, s2, p2, BIG
+                        text, lang, score, prob, used = t2, l2, s2, p2, retry
                 except Exception as e:
                     print("[stt] big-model retry failed: %s" % str(e).splitlines()[-1][:160], flush=True)
             print("[stt] %s %s %.1fs" % (used, lang, time.time() - t0), flush=True)
             if free and _device() == "cuda":
-                try:
-                    global MODEL
-                    del MODEL
-                    MODEL = None
-                    import torch
-                    torch.cuda.empty_cache()
-                    print("[stt] unloaded model to free VRAM for RVC", flush=True)
-                except Exception as e:
-                    print("[stt] unload failed: %s" % e, flush=True)
+                _free_others(None)
+                print("[stt] unloaded models to free VRAM for RVC", flush=True)
         except Exception as e:
             msg = str(e).encode()
             self.send_response(500); self.send_header("Content-Type", "text/plain"); self._cors(); self.end_headers()

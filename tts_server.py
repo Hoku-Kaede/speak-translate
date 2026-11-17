@@ -154,13 +154,20 @@ def translate_google(text, src, tgt):
 
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+# llama-3.3-70b-versatile was removed from Groq's free tier in Aug 2026.
+# gpt-oss-120b is still free: 30 req/min, 1000/day, 200k tokens/day.
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent"
+# 2.5 models are being retired in late 2026. Flash-Lite is free and is the
+# translation-optimized, highest-quota free model (typically 15 RPM / 500 RPD).
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
 
 
 def translate_groq(text, src, tgt, key):
     s = LANG_NAMES.get(src, src)
     t = LANG_NAMES.get(tgt, tgt)
     body = {
-        "model": "llama-3.3-70b-versatile",
+        "model": GROQ_MODEL,
         "messages": [
             {"role": "system", "content": "You are a professional interpreter. Translate meaning and intent, "
                                           "not words. Use idioms a native speaker would use. "
@@ -182,6 +189,36 @@ def translate_groq(text, src, tgt, key):
     out = out.strip().strip('"').strip()
     if not out:
         raise RuntimeError("groq empty")
+    return out
+
+
+def translate_gemini(text, src, tgt, key):
+    """Google Gemini free tier. Key via GEMINI_API_KEY or the gemini_key query param."""
+    s = LANG_NAMES.get(src, src)
+    t = LANG_NAMES.get(tgt, tgt)
+    body = {
+        "system_instruction": {"parts": [{"text":
+            "You are a professional interpreter. Translate meaning and intent, not words. "
+            "Use idioms a native speaker would use. Output only the translation: no notes, "
+            "no romanization, no source text, no quotes around the answer."}]},
+        "contents": [{"role": "user", "parts": [{"text":
+            "Translate this %s text to %s:\n\n%s" % (s, t, text)}]}],
+        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 512},
+    }
+    req = urllib.request.Request(GEMINI_URL % GEMINI_MODEL, data=json.dumps(body).encode(), headers={
+        "Content-Type": "application/json",
+        "x-goog-api-key": key,
+        "User-Agent": "Mozilla/5.0",
+    })
+    with urllib.request.urlopen(req, timeout=40) as r:
+        res = json.loads(r.read().decode())
+    out = ""
+    for cand in res.get("candidates") or []:
+        for part in ((cand.get("content") or {}).get("parts") or []):
+            out += part.get("text") or ""
+    out = out.strip().strip('"').strip()
+    if not out:
+        raise RuntimeError("gemini empty")
     return out
 
 
@@ -325,19 +362,27 @@ class Handler(BaseHTTPRequestHandler):
             engine = (qs.get("engine") or ["auto"])[0]
             if not text.strip():
                 self.send_response(400); self.end_headers(); return
+            used_engine = "echo"
             if src == tgt:
                 out = text
             else:
                 key = (qs.get("key") or [os.environ.get("GROQ_API_KEY", "")])[0]
+                gkey = (qs.get("gemini_key") or [os.environ.get("GEMINI_API_KEY", "")])[0]
                 order = ["google", "mymemory", "qwen", "aya"]
+                if gkey:
+                    order.insert(0, "gemini")
                 if key:
-                    order = ["groq"] + order
+                    order.insert(0, "groq")
                 if engine == "groq":
                     order = ["groq"]
+                elif engine == "gemini":
+                    order = ["gemini"]
                 elif engine != "auto":
                     order = [engine]
                 out = None
                 last = None
+                last_eng = None
+                failures = []
                 for eng in order:
                     if src == "auto" and eng != "google":
                         continue  # only Google accepts an unknown source language
@@ -346,6 +391,10 @@ class Handler(BaseHTTPRequestHandler):
                             if not key:
                                 raise RuntimeError("no key")
                             cand = translate_groq(text, src, tgt, key)
+                        elif eng == "gemini":
+                            if not gkey:
+                                raise RuntimeError("no key")
+                            cand = translate_gemini(text, src, tgt, gkey)
                         elif eng == "google":
                             cand = translate_google(text, src, tgt)
                         elif eng == "mymemory":
@@ -356,26 +405,36 @@ class Handler(BaseHTTPRequestHandler):
                             cand = translate_ollama_model(text, src, tgt, "aya:8b")
                         else:
                             continue
-                    except Exception:
+                    except Exception as e:
+                        reason = str(e).splitlines()[-1][:90] if str(e) else type(e).__name__
+                        failures.append("%s: %s" % (eng, reason))
                         continue
                     cand = (cand or "").strip().strip('"').strip()
                     if not cand:
+                        failures.append("%s: empty" % eng)
                         continue
                     last = cand
+                    last_eng = eng
                     if valid_translation(cand, text, tgt):
                         out = cand
+                        used_engine = eng
                         break
                 if out is None:
                     out = last
+                    used_engine = last_eng
                 if out is None:
-                    msg = b"translation failed"
+                    detail = "; ".join(failures)[:400]
+                    print(("[translate] FAILED %s->%s %s" % (src, tgt, detail)).encode("ascii", "replace").decode(), flush=True)
+                    msg = json.dumps({"error": "translation failed", "tried": failures}, ensure_ascii=False).encode()
                     self.send_response(502)
-                    self.send_header("Content-Type", "text/plain")
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(msg)))
                     self._cors()
                     self.end_headers()
                     self.wfile.write(msg)
                     return
-            data = json.dumps({"translated": out}).encode()
+            print(("[translate] %s->%s via %s: %s" % (src, tgt, used_engine, out[:80])).encode("ascii", "replace").decode(), flush=True)
+            data = json.dumps({"translated": out, "engine": used_engine}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
