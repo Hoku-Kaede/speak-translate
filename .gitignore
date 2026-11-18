@@ -20,3 +20,21 @@ react-app/dist/
 .env.local
 .python_path
 .DS_Store
+
+# Full local pip freeze and scratch/debug artifacts. Use requirements-kyrie.txt.
+requirements.txt
+/diag_*.py
+/*_test.json
+/autotest.json
+/chk.json
+/fail.json
+/gpt.json
+/gtest.json
+/ok.json
+/tr2.json
+/t_cpu.py
+/t_ct2.py
+/t_prep.py
+/t_tr.py
+/start_all.ps1
+/index.html

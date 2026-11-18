@@ -1,131 +1,114 @@
 # Kyrie
 
-Voice translator with a two-way Call mode for Discord / Google Meet.
+Kyrie is a free voice translator with a two-way **Call mode** for Discord and Google Meet.
+It runs speech recognition, translation and speech synthesis locally. No paid API key is required.
+Gemini or Groq keys are optional and only improve idiom handling.
 
-## Fresh clone setup (Windows)
+## Requirements
 
-The repo intentionally excludes models, RVC `.pth` files, logs and `node_modules`.
-A fresh `git clone` will not have a working Malayalam STT model or any RVC voice.
-Run once from the cloned folder:
+- Windows 10 or 11
+- Python 3.11, added to PATH
+- Node.js 18 or newer with npm
+- Git
+- Internet on first install (downloads Python packages, npm packages and the Malayalam STT model)
+- NVIDIA GPU is optional. Everything works on CPU, just slower.
 
-```powershell
-cd <your-clone-folder>
-.\setup.ps1
-```
-
-That installs Python/npm packages and downloads + converts the Malayalam Whisper
-model into `models\ml-small-ct2`. It needs internet on first run. For RVC, copy
-your `.pth` (and matching `.index`) into `rvc_models\`. Then:
+## Install on a new PC
 
 ```powershell
-.\launch.ps1
+git clone https://github.com/Hoku-Kaede/speak-translate.git
+cd speak-translate
+powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-`launch.ps1`, `install_shortcut.ps1` and `stop.ps1` now derive their paths from
-their own folder, so the cloned folder can live anywhere. `launch.ps1` also
-detects whichever Python is on PATH; it no longer requires a `python3.11` alias.
+`install.ps1` does three things: runs `setup.ps1`, creates the desktop shortcuts, and starts Kyrie.
+First run takes several minutes. Wait for `Kyrie should be open at http://localhost:5173`.
 
-Common clone errors:
-- `python3.11 is not recognized` → fixed by `setup.ps1` / updated `launch.ps1`.
-- `no .pth models found in rvc_models` → copy your RVC model into `rvc_models\`.
-- STT model download fails → check internet, or rerun `python build_ml_small.py`.
-- CUDA DLL errors (`cublas64_12.dll`, `cudnn_ops64_9.dll`) → install CUDA torch
-  from `https://download.pytorch.org/whl/cu124`, or run backends on CPU.
-
-## Run (needed for mic permission)
-
-Chrome/Edge block mic on `file://`. Serve over localhost:
+If you prefer to do it manually:
 
 ```powershell
-cd D:\work\voice-translate
-python -m http.server 5173
+powershell -ExecutionPolicy Bypass -File .\setup.ps1
+powershell -ExecutionPolicy Bypass -File .\install_shortcut.ps1
+powershell -ExecutionPolicy Bypass -File .\launch.ps1
 ```
 
-Open http://localhost:5173 in Chrome or Edge.
+`setup.ps1` installs everything from `requirements-kyrie.txt`, runs `npm install`, creates
+`logs\`, `models\` and `rvc_models\`, and downloads/converts the Malayalam Whisper model into
+`models\ml-small-ct2`. It records the Python path it used in `.python_path`; `launch.ps1` uses
+that same interpreter, so packages cannot end up installed into a different Python.
 
-## Use
-- Pick source/target languages, tap mic, speak.
-- Translation shows + auto-speaks in target language (toggle auto-speak).
-- "continuous listen" keeps listening after each utterance.
-- "edit before send" lets you fix STT text before translating.
-- History saved in browser (localStorage).
-
-## Phone
-Mic needs HTTPS. Use a tunnel:
-```powershell
-npx localtunnel --port 5173
-```
-or ngrok. Open the https URL on your phone.
-
-## Limits
-- STT/TTS: Chrome/Edge only (Web Speech API). Safari partial.
-- Translation: MyMemory free tier 5000 chars/day anonymous, then Google fallback.
-- Voice quality: OS voices (robotic). For better, build path B (offline Python: faster-whisper + Piper).
-
-## Human-like voice (optional, free)
-Edge neural voices via local backend:
+For NVIDIA GPU acceleration, install CUDA torch before setup:
 
 ```powershell
-cd D:\work\voice-translate
-pip install edge-tts
-python tts_server.py
+python -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
 ```
 
-Keep it running. In the app, enable "human voice (Edge)" chip and pick a voice. Falls back to OS voice if backend down. Supports Malayalam (ml-IN-MidhunNeural, ml-IN-SobhanaNeural) and 100+ languages.
+## RVC voice models
 
-## Voice cloning (optional, ElevenLabs-style)
-Requires Python 3.11 (for PyTorch/Coqui). Install torch + coqui-tts:
+RVC models are intentionally **not** in git. Copy your own files into `rvc_models\`:
 
-```powershell
-python3.11 -m pip install --break-system-packages torch torchaudio --index-url https://download.pytorch.org/whl/cu124
-python3.11 -m pip install --break-system-packages coqui-tts
+```
+rvc_models\cypher.pth
+rvc_models\cypher.index     (optional, must share the base name)
 ```
 
-Run clone backend:
+Restart the RVC backend after adding files. `http://localhost:8004/health` should list them.
+Without `.pth` files, RVC is unavailable; the rest of Kyrie still works.
 
-```powershell
-cd D:\work\voice-translate
-python3.11 clone_server.py
-```
+## Start and stop
 
-First run downloads ~2GB XTTS model. In app, enable "clone voice (XTTS)", upload a 6-10s clean voice sample (wav/mp3), select it. Supported langs: en es fr de it pt pl tr ru nl cs ar zh ja hu ko hi. (Malayalam not supported by XTTS; use Edge voice for ml.)
+- Start: double-click the **Kyrie** desktop shortcut, or run `launch.ps1`.
+- Stop: double-click **Kill Kyrie** or press **Ctrl+Alt+K**. Also runnable as `stop.ps1`.
 
-## RVC voice (your own .pth model, works with any language)
-Local RVC conversion runs after Edge TTS, so Malayalam text can be spoken in a cloned RVC timbre. Requires Python 3.11.
+`launch.ps1` only starts services that are not already running and opens `http://localhost:5173`.
+Closing the browser tab does not stop the backends.
 
-Install once:
+## Call mode
 
-```powershell
-python3.11 -m pip install --break-system-packages --no-deps rvc-python
-python3.11 -m pip install --break-system-packages av faiss-cpu praat-parselmouth pyworld torchcrepe
-```
+Open **📞 call mode** in the app. Set your language, their language, microphone, `CABLE Input`
+as "to call (cable)", and your headphones as "to your ears". Press start, choose the Discord or
+Meet tab in the screen picker, and tick **Share tab audio**.
 
-Run:
+In Discord or Meet:
+- microphone = `CABLE Output (VB-Audio Virtual Cable)`
+- output = your headphones
+- noise suppression / echo cancellation / auto gain = off
 
-```powershell
-cd D:\work\voice-translate
-python3.11 rvc_server.py
-```
+Other controls: translator engine, male/female voice for each direction, microphone and system
+audio thresholds, silence timeout, and RVC on your outbound voice.
 
-Model discovery: `.pth` files in `rvc_models/` (create it) or `%USERPROFILE%\Downloads\Cypher`. Index `.index` files with a matching name load automatically.
+## Optional online translators
 
-Adding models from the app: enable "RVC voice (local)" → **add model** → select the `.pth` (and its `.index` in the same selection if you have one). The file name becomes the model name, and the index is renamed to match so pairing is automatic. **delete** removes uploaded models only (files in `Downloads` are never touched).
+The **translator** dropdown accepts `auto`, `google`, `mymemory`, `qwen`, `aya`, `gemini` and `groq`.
+Offline Ollama engines need Ollama running on port 11434. Gemini and Groq need a free API key;
+paste it into the Call mode key field, stored only in this browser, or set `GEMINI_API_KEY` /
+`GROQ_API_KEY` before launching. `auto` falls back to Google when a paid or online engine fails.
 
-No fairseq needed: the server uses `lengyue233/content-vec-best` (transformers) as the feature encoder and `rmvpe.pt` for pitch.
+## Ports
 
-VRAM: the server loads the model on CUDA (fp16) and needs ~1 GB free. If the GPU is full (Ollama, XTTS) or a CUDA error occurs, it switches to CPU automatically (~4 s per sentence). Force CPU with `$env:RVC_DEVICE="cpu"` before starting.
+| Port | Service |
+|---|---|
+| 5173 | Vite UI |
+| 8001 | XTTS voice cloning |
+| 8002 | Whisper STT |
+| 8003 | Edge TTS and translation |
+| 8004 | RVC voice conversion |
+| 11434 | Ollama (optional) |
 
-In the app: enable "RVC voice (local)", pick model, set pitch offset in semitones (-12 for a female Edge voice into a male model, 0 if unsure). Base voice still comes from the Edge chip.
+Do not stop port 8000. It belongs to Splunk.
 
-## Whisper STT (local, optional)
+## Logs
 
-```powershell
-python -m pip install faster-whisper
-python stt_server.py
-```
+`logs\stt.log`, `logs\tts.log`, `logs\rvc.log`, `logs\clone.log`, `logs\web.log`, `logs\setup.log`,
+`logs\stop.log`.
 
-Push-to-talk: enable "Whisper STT (local)", tap mic to record. Hands-free auto-stop (VAD, ~1.1 s silence) works in this mode too.
+## Troubleshooting
 
-Source language **Auto-detect (Whisper)**: Whisper identifies the spoken language and the app translates from it. The detected code shows on the mic label. Browser Web Speech API cannot auto-detect, so choosing Auto switches STT to Whisper.
-
-Quality: `small` (default, ~1-3 s/utterance on CPU) is fine for English/European languages but weak on Malayalam — it often writes Devanagari or Latin gibberish. `large-v3-turbo` writes correct Malayalam script but needs ~12-18 s/utterance on CPU; run it on the GPU (install faster-whisper into the Python 3.11 env that has CUDA torch) for ~1-2 s. Switch with `$env:WHISPER_MODEL="large-v3-turbo"`. Auto-detect confuses Malayalam with Tamil at times; pick the source language explicitly when that happens.
+- `python3.11 is not recognized` → install Python 3.11 with "Add to PATH", rerun setup.
+- `ModuleNotFoundError: faster_whisper` → rerun `setup.ps1`; `launch.ps1` will use the recorded Python path.
+- RVC says `no .pth models found` → copy `.pth` files into `rvc_models\` and restart.
+- RVC says `unreachable` → check `logs\rvc.log`; first start downloads ContentVec and can take ~30 s.
+- CUDA DLL errors → install CUDA torch, or set `$env:RVC_DEVICE='cpu'` before launching.
+- Malayalam STT missing → check `models\ml-small-ct2`; rerun `python build_ml_small.py`.
+- Other person cannot hear → verify cable with the button in Call mode; set Discord/Meet input to `CABLE Output`.
+- You cannot hear translation → press the test button next to "to your ears"; check Windows default output.

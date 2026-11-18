@@ -21,20 +21,17 @@ try {
 
   $PIP_FLAGS = @('--timeout', '120', '--retries', '10')
 
-  function Install-Pip([string[]]$packages, [switch]$Required) {
-    foreach ($pkg in $packages) {
-      Write-Host "pip install $pkg"
-      $out = & $PY -m pip install @PIP_FLAGS $pkg 2>&1
-      if ($LASTEXITCODE -ne 0) {
-        $out | Select-Object -Last 6 | ForEach-Object { Write-Host "  $_" }
-        Write-Host "  retrying with --break-system-packages: $pkg"
-        $out = & $PY -m pip install @PIP_FLAGS --break-system-packages $pkg 2>&1
-      }
-      if ($LASTEXITCODE -ne 0) {
-        $out | Select-Object -Last 10 | ForEach-Object { Write-Host "  $_" }
-        Write-Host "  FAILED: $pkg"
-        if ($Required) { throw "Required package failed: $pkg" }
-      }
+  function Install-Requirements([string]$file) {
+    Write-Host "pip install -r $file"
+    $out = & $PY -m pip install @PIP_FLAGS -r $file 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      $out | Select-Object -Last 8 | ForEach-Object { Write-Host "  $_" }
+      Write-Host '  retrying with --break-system-packages'
+      $out = & $PY -m pip install @PIP_FLAGS --break-system-packages -r $file 2>&1
+    }
+    if ($LASTEXITCODE -ne 0) {
+      $out | Select-Object -Last 15 | ForEach-Object { Write-Host "  $_" }
+      throw "pip install failed for $file"
     }
   }
 
@@ -49,13 +46,10 @@ try {
   Write-Host 'Upgrading pip / setuptools / wheel...'
   & $PY -m pip install @PIP_FLAGS --upgrade pip setuptools wheel 2>&1 | Select-Object -Last 6 | ForEach-Object { Write-Host "  $_" }
 
-  # Core backends. For NVIDIA GPU, install CUDA torch instead:
+  # All Python dependencies live in one reviewed file. For NVIDIA GPU, install
+  # CUDA torch first:
   #   python -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
-  Install-Pip -Required @('faster-whisper', 'edge-tts', 'transformers', 'huggingface_hub',
-                          'soundfile', 'numpy', 'torch', 'torchaudio')
-  # RVC extras are optional: RVC fails only if these are missing when it is used.
-  Install-Pip @('faiss-cpu', 'av', 'praat-parselmouth', 'pyworld', 'torchcrepe')
-  Install-Pip @('rvc-python')
+  Install-Requirements (Join-Path $root 'requirements-kyrie.txt')
 
   if (Get-Command npm -ErrorAction SilentlyContinue) {
     Write-Host 'npm install (react-app)'
