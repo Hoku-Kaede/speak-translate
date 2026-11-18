@@ -49,7 +49,7 @@ try {
   # All Python dependencies live in one reviewed file. For NVIDIA GPU, install
   # CUDA torch first:
   #   python -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
-  Install-Requirements (Join-Path $root 'requirements-kyrie.txt')
+  Install-Requirements (Join-Path $root 'requirements.txt')
 
   if (Get-Command npm -ErrorAction SilentlyContinue) {
     Write-Host 'npm install (react-app)'

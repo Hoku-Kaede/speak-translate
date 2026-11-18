@@ -1,4 +1,4 @@
-# Kyrie backend dependencies. Python 3.11 recommended.
+﻿# Kyrie backend dependencies. Python 3.11 recommended.
 # Install: python -m pip install -r requirements-kyrie.txt
 #
 # For an NVIDIA GPU, install CUDA torch BEFORE this file so PyTorch gets CUDA wheels:

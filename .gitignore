@@ -21,8 +21,9 @@ react-app/dist/
 .python_path
 .DS_Store
 
-# Full local pip freeze and scratch/debug artifacts. Use requirements-kyrie.txt.
-requirements.txt
+# Full local pip freeze backup and scratch/debug artifacts.
+# The committed requirements.txt is the clean Kyrie dependency list.
+requirements.local-full.txt
 /diag_*.py
 /*_test.json
 /autotest.json
@@ -37,4 +38,3 @@ requirements.txt
 /t_prep.py
 /t_tr.py
 /start_all.ps1
-/index.html

@@ -32,7 +32,7 @@ powershell -ExecutionPolicy Bypass -File .\install_shortcut.ps1
 powershell -ExecutionPolicy Bypass -File .\launch.ps1
 ```
 
-`setup.ps1` installs everything from `requirements-kyrie.txt`, runs `npm install`, creates
+`setup.ps1` installs everything from `requirements.txt`, runs `npm install`, creates
 `logs\`, `models\` and `rvc_models\`, and downloads/converts the Malayalam Whisper model into
 `models\ml-small-ct2`. It records the Python path it used in `.python_path`; `launch.ps1` uses
 that same interpreter, so packages cannot end up installed into a different Python.
