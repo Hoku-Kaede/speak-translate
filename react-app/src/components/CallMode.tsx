@@ -125,14 +125,26 @@ export default function CallMode({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (!rvcOn) return
     (async () => {
-      try {
-        const res = await fetch('http://localhost:8004/models', { signal: AbortSignal.timeout(8000) })
-        const data = await res.json()
-        setRvcModels(data)
-        if (data.length && !rvcModel) setRvcModel(data[0].name)
-      } catch {
-        setStatus('RVC backend unreachable on 8004')
+      // ContentVec preload can take ~30 s on first start. Retry instead of
+      // declaring the backend dead after one 8 s timeout.
+      setStatus('RVC backend starting on 8004…')
+      let last: any = null
+      for (let i = 0; i < 5; i++) {
+        try {
+          const h = await fetch('http://localhost:8004/health', { signal: AbortSignal.timeout(8000) })
+          if (!h.ok) throw new Error('health http ' + h.status)
+          const res = await fetch('http://localhost:8004/models', { signal: AbortSignal.timeout(8000) })
+          const data = await res.json()
+          setRvcModels(data)
+          if (data.length && !rvcModel) setRvcModel(data[0].name)
+          setStatus('RVC ready · ' + data.length + ' models')
+          return
+        } catch (e: any) {
+          last = e
+          await new Promise(r => setTimeout(r, 1500))
+        }
       }
+      setStatus(`RVC backend unreachable on 8004: ${String(last?.message || last?.name || 'error').slice(0, 70)}`)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rvcOn])

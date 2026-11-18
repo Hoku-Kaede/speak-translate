@@ -1,0 +1,34 @@
+# Kyrie backend dependencies. Python 3.11 recommended.
+# Install: python -m pip install -r requirements-kyrie.txt
+#
+# For an NVIDIA GPU, install CUDA torch BEFORE this file so PyTorch gets CUDA wheels:
+#   python -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+# On a CPU-only laptop, skip that command; the plain torch below is enough.
+
+# STT + Malayalam model build
+faster-whisper==1.2.1
+ctranslate2==4.9.0
+huggingface_hub
+transformers
+sentencepiece
+
+# Translation + speech
+edge-tts
+
+# Audio / numeric
+soundfile
+numpy
+torch
+torchaudio
+
+# RVC backend
+rvc-python
+faiss-cpu
+av
+praat-parselmouth
+pyworld
+torchcrepe
+
+# Optional XTTS voice-clone backend on port 8001. Large download (~2 GB model).
+# Uncomment only if you use clone mode.
+# coqui-tts
