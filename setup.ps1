@@ -41,6 +41,7 @@ try {
   $PY = Find-Python @('python3.11', 'python3', 'python')
   if (-not $PY) { throw 'Python not found. Install Python 3.11 with Add to PATH, then rerun setup.ps1.' }
   Write-Host "Using Python: $PY"
+  Set-Content -Path (Join-Path $root '.python_path') -Value $PY
   $ver = & $PY -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>&1
   Write-Host "Python version: $ver"
   if ($ver -ne '3.11') { Write-Host 'Python 3.11 is recommended; XTTS cloning may need it.' }

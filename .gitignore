@@ -18,4 +18,5 @@ react-app/dist/
 # Local config
 .env
 .env.local
+.python_path
 .DS_Store

@@ -25,6 +25,14 @@ function Find-Python([string[]]$names) {
 # Fresh clones do not necessarily have a python3.11 alias, or Python on PATH at all.
 $PY311 = Find-Python @('python3.11', 'python3', 'python')
 $PY = Find-Python @('python', 'python3', 'python3.11')
+# setup.ps1 records the exact interpreter it installed into. Use it, so launch
+# cannot pick a different Python from PATH and miss faster-whisper.
+$savedPy = Join-Path $root '.python_path'
+if ((Test-Path $savedPy) -and (Test-Path (Get-Content $savedPy -Raw).Trim())) {
+  $saved = (Get-Content $savedPy -Raw).Trim()
+  $PY = $saved
+  $PY311 = $saved
+}
 if (-not $PY311 -or -not $PY) {
   Write-Host 'Python not found on PATH. Install Python 3.11, then run launch.ps1 again.'
   exit 1
