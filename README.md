@@ -1,6 +1,36 @@
-# Speak Translate (free)
+# Kyrie
 
-Browser-only voice translator. No API keys, no installs beyond a browser.
+Voice translator with a two-way Call mode for Discord / Google Meet.
+
+## Fresh clone setup (Windows)
+
+The repo intentionally excludes models, RVC `.pth` files, logs and `node_modules`.
+A fresh `git clone` will not have a working Malayalam STT model or any RVC voice.
+Run once from the cloned folder:
+
+```powershell
+cd <your-clone-folder>
+.\setup.ps1
+```
+
+That installs Python/npm packages and downloads + converts the Malayalam Whisper
+model into `models\ml-small-ct2`. It needs internet on first run. For RVC, copy
+your `.pth` (and matching `.index`) into `rvc_models\`. Then:
+
+```powershell
+.\launch.ps1
+```
+
+`launch.ps1`, `install_shortcut.ps1` and `stop.ps1` now derive their paths from
+their own folder, so the cloned folder can live anywhere. `launch.ps1` also
+detects whichever Python is on PATH; it no longer requires a `python3.11` alias.
+
+Common clone errors:
+- `python3.11 is not recognized` → fixed by `setup.ps1` / updated `launch.ps1`.
+- `no .pth models found in rvc_models` → copy your RVC model into `rvc_models\`.
+- STT model download fails → check internet, or rerun `python build_ml_small.py`.
+- CUDA DLL errors (`cublas64_12.dll`, `cudnn_ops64_9.dll`) → install CUDA torch
+  from `https://download.pytorch.org/whl/cu124`, or run backends on CPU.
 
 ## Run (needed for mic permission)
 
