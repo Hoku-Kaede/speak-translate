@@ -19,14 +19,16 @@ try {
     return $null
   }
 
+  $PIP_FLAGS = @('--timeout', '120', '--retries', '10')
+
   function Install-Pip([string[]]$packages, [switch]$Required) {
     foreach ($pkg in $packages) {
       Write-Host "pip install $pkg"
-      $out = & $PY -m pip install $pkg 2>&1
+      $out = & $PY -m pip install @PIP_FLAGS $pkg 2>&1
       if ($LASTEXITCODE -ne 0) {
         $out | Select-Object -Last 6 | ForEach-Object { Write-Host "  $_" }
         Write-Host "  retrying with --break-system-packages: $pkg"
-        $out = & $PY -m pip install --break-system-packages $pkg 2>&1
+        $out = & $PY -m pip install @PIP_FLAGS --break-system-packages $pkg 2>&1
       }
       if ($LASTEXITCODE -ne 0) {
         $out | Select-Object -Last 10 | ForEach-Object { Write-Host "  $_" }
@@ -42,6 +44,9 @@ try {
   $ver = & $PY -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>&1
   Write-Host "Python version: $ver"
   if ($ver -ne '3.11') { Write-Host 'Python 3.11 is recommended; XTTS cloning may need it.' }
+
+  Write-Host 'Upgrading pip / setuptools / wheel...'
+  & $PY -m pip install @PIP_FLAGS --upgrade pip setuptools wheel 2>&1 | Select-Object -Last 6 | ForEach-Object { Write-Host "  $_" }
 
   # Core backends. For NVIDIA GPU, install CUDA torch instead:
   #   python -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
